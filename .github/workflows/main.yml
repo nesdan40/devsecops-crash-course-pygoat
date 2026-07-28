@@ -3,45 +3,76 @@ name: CI
 on: [push]
 
 jobs:
-  sast-scan:
-    name: Run Bandit SAST Scan
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+ sast_scan:
+   name: Run Bandit Scan
+   runs-on: ubuntu-latest
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.8'
+   steps:
+   - name: Checkout code
+     uses: actions/checkout@v2
 
-      - name: Install Bandit
-        run: pip install bandit
+   - name: Set up Python
+     uses: actions/setup-python@v2
+     with:
+       python-version: 3.8
 
-      - name: Run Bandit SAST Scan
-        run: bandit -ll -ii -r . -f json -o bandit_report.json
-    
-      - name: Upload Bandit Report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bandit-report
-          path: bandit_report.json
+   - name: Install Bandit
+     run: pip install bandit
 
-  image_scan:
-    name: Build and Run Docker Image
-    runs-on: ubuntu-latest
+   - name: Run Bandit Scan
+     run: bandit -ll -ii -r . -f json -o bandit-report.json || true
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+   - name: Upload Artifact
+     uses: actions/upload-artifact@v4
+     if: always()
+     with:
+      name: bandit-findings
+      path: bandit-report.json
 
-      - name: Build Docker Image
-        run: docker build -f Dockerfile -t myapp:latest .
+ image_scan:
+  name: Build Image and Run Docker Scout Scan
+  runs-on: ubuntu-22.04
 
-      - name: Docker Scout
-        uses: docker/scout-action@v1.23.1
-        with:
-          command: quickview,cves
-          image: myapp:latest
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Docker
+      uses: crazy-max/ghaction-setup-docker@v2
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USER }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build Docker Image
+      run: docker build -f Dockerfile -t ${{ secrets.DOCKERHUB_USER }}/myapp:latest .
+
+    - name: Push Docker Image
+      run: docker push ${{ secrets.DOCKERHUB_USER }}/myapp:latest
+
+    - name: Set Docker Scout Cache Format
+      run: echo "DOCKER_SCOUT_CACHE_FORMAT=tar" >> $GITHUB_ENV
+
+    - name: Docker Scout Scan
+      uses: docker/scout-action@v1.0.9
+      with:
+        dockerhub-user: ${{ secrets.DOCKERHUB_USER }}
+        dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+        image: ${{ secrets.DOCKERHUB_USER }}/myapp:latest
+        command: quickview,cves
+        only-severities: critical,high
+        sarif-file: scout-report.sarif
+
+    - name: Upload Docker Scout Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: docker-scout-findings
+        path: scout-report.sarif
+
+
+   
+
+   
