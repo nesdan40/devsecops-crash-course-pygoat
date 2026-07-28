@@ -41,7 +41,7 @@ jobs:
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USER }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
     - name: Build Docker Image
       run: docker build -f Dockerfile -t ${{ secrets.DOCKERHUB_USER }}/myapp:latest .
@@ -56,7 +56,7 @@ jobs:
       uses: docker/scout-action@v1.0.9
       with:
         dockerhub-user: ${{ secrets.DOCKERHUB_USER }}
-        dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+        dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
         image: ${{ secrets.DOCKERHUB_USER }}/myapp:latest
         command: quickview,cves
         only-severities: critical,high
