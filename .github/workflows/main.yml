@@ -1,7 +1,21 @@
-name: CI
+name: CI-CD pipeline
 
-on: [push]
+on:
+ push:
+   branches:
+     - "feature/**"
+     - "main"
+ pull_request:
+   branches:
+     - main
+   types:
+     - opened
+     - synchronize
+     - reopened
 
+permissions:
+  contents: read
+     
 jobs:
  sast_scan:
    name: Run Bandit Scan
@@ -20,17 +34,18 @@ jobs:
      run: pip install bandit
 
    - name: Run Bandit Scan
-     run: bandit -ll -ii -r . -f json -o bandit-report.json || true
+     run: bandit -ll -iii -r . -f json -o bandit-report.json || true
 
    - name: Upload Artifact
      uses: actions/upload-artifact@v4
-     if: always()
+     # if: always()
      with:
       name: bandit-findings
       path: bandit-report.json
 
- image_scan:
+ build_image:
   name: Build Image and Run Docker Scout Scan
+  needs: sast_scan
   runs-on: ubuntu-22.04
 
   steps:
@@ -45,12 +60,6 @@ jobs:
 
     - name: Build Docker Image
       run: docker build -f Dockerfile -t ${{ secrets.DOCKERHUB_USER }}/myapp:latest .
-
-    - name: Push Docker Image
-      run: docker push ${{ secrets.DOCKERHUB_USER }}/myapp:latest
-
-    - name: Set Docker Scout Cache Format
-      run: echo "DOCKER_SCOUT_CACHE_FORMAT=tar" >> $GITHUB_ENV
 
     - name: Docker Scout Scan
       uses: docker/scout-action@v1.0.9
@@ -69,7 +78,49 @@ jobs:
       with:
         name: docker-scout-findings
         path: scout-report.sarif
+        
+    - name: Save docker image
+      run: |
+         docker save \
+         ${{ secrets.DOCKERHUB_USER }}/myapp:latest \
+         -o myapp-image.tar
 
+    - name: Upload Docker Image 
+      uses: actions/upload-artifact@v4
+      # if: always()
+      with:
+        name: docker-image
+        path: myapp-image.tar        
+
+ push_image:
+   name: Push Image into Docker hub
+   needs:
+     - sast_scan
+     - build_image
+
+   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+   runs-on: ubuntu-22.04
+
+   steps:
+     - name: Download a Build Artifact
+       uses: actions/download-artifact@v3.1.0
+       with:
+         name: docker-image
+
+     - name: Load docker image
+       run: docker load -i myapp-image.tar
+
+     - name: Login to Docker Hub
+       uses: docker/login-action@v3
+       with:
+         username: ${{ secrets.DOCKERHUB_USER }}
+         password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+     - name: Push to Docker Hub
+       run: docker push ${{ secrets.DOCKERHUB_USER }}/myapp:latest
+
+   
+    
 
    
 
